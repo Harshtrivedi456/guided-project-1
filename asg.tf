@@ -1,0 +1,96 @@
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"]
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
+  }
+}
+
+resource "aws_lb" "alb" {
+  name               = "scholaris-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb_sg.id]
+  subnets            = [aws_subnet.public_a.id, aws_subnet.public_b.id]
+}
+
+resource "aws_lb_target_group" "tg" {
+  name     = "scholaris-tg"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.main.id
+  health_check {
+    path     = "/health"
+    interval = 30
+  }
+}
+
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.alb.arn
+  port              = "80"
+  protocol          = "HTTP"
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.tg.arn
+  }
+}
+
+resource "aws_launch_template" "lt" {
+  name_prefix   = "scholaris-tpl-"
+  image_id      = data.aws_ami.ubuntu.id
+  instance_type = "m7i-flex.large"
+  key_name      = "terra"
+  vpc_security_group_ids = [aws_security_group.ec2_sg.id]
+  iam_instance_profile { name = aws_iam_instance_profile.scholaris_profile.name }
+
+  block_device_mappings {
+    device_name = "/dev/sda1"
+    ebs {
+      volume_size = 30
+      volume_type = "gp3"
+    }
+  }
+
+  user_data = base64encode(<<-EOF
+              #!/bin/bash
+              apt-get update -y
+              apt-get install -y nfs-common docker.io git
+              systemctl start docker
+              systemctl enable docker
+              usermod -aG docker ubuntu
+              mkdir -p /home/ubuntu/scholaris-devops/static/uploads
+              mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${aws_efs_file_system.fs.dns_name}:/ /home/ubuntu/scholaris-devops/static/uploads
+              cd /home/ubuntu
+              git clone  https://github.com/rajpatel10124/guided-project-1.git
+              cd guided-project-1
+              docker build -t scholaris-app .
+              docker run -d --name scholaris-container \
+                -p 80:5000 \
+                -e DATABASE_URL="postgresql://scholaris_admin:ScholarisPass123@${aws_db_instance.db.endpoint}/scholaris" \
+                -e SECRET_KEY="something-very-secret-123" \
+                -e MAIL_USERNAME="lykensolution@gmail.com" \
+                -e MAIL_PASSWORD="dgmo vyaq ansy bmwu" \
+                -e MAIL_SERVER="smtp.gmail.com" \
+                -e MAIL_PORT=587 \
+                --log-driver=awslogs \
+                --log-opt awslogs-group=/aws/ec2/scholaris-app \
+                --log-opt awslogs-region=us-east-1 \
+                scholaris-app
+              EOF
+  )
+}
+
+resource "aws_autoscaling_group" "asg" {
+  desired_capacity    = 1
+  max_size            = 2
+  min_size            = 1
+  target_group_arns   = [aws_lb_target_group.tg.arn]
+  vpc_zone_identifier = [aws_subnet.public_a.id, aws_subnet.public_b.id]
+  launch_template {
+    id      = aws_launch_template.lt.id
+    version = "$Latest"
+  }
+}
+
+output "ALB_URL" { value = "http://${aws_lb.alb.dns_name}" }
