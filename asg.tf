@@ -96,7 +96,8 @@ resource "aws_launch_template" "lt" {
                 --log-driver=awslogs \
                 --log-opt awslogs-group=/aws/ec2/scholaris-app \
                 --log-opt awslogs-region=us-east-1 \
-                scholaris-app
+                # FORCE REBOOT TIMESTAMP: 2026-04-24 13:28:00
+              scholaris-app
               EOF
   )
 }
