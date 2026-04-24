@@ -37,7 +37,11 @@ import logic
 # ─────────────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-key-change-in-production')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///scholaris.db')
+# Database path: Move to home directory to avoid NTFS permission issues on external drives
+local_db_path = os.path.join(os.path.expanduser("~"), ".scholaris_data", "scholaris.db")
+os.makedirs(os.path.dirname(local_db_path), exist_ok=True)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', f'sqlite:///{local_db_path}')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'static', 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1 GB
