@@ -592,6 +592,14 @@ def run_bulk_check_task(app, run_id, temp_dir, threshold):
 # =============================================================================
 # ENTRY POINT
 # =============================================================================
+# Ensure database tables exist (Runs on startup under Gunicorn/Eventlet)
+with app.app_context():
+    try:
+        db.create_all()
+        print("[SCHOLARIS] Database schema verified/created.")
+    except Exception as e:
+        print(f"[SCHOLARIS] Database connection failed: {e}")
+
 if __name__ == '__main__':
     with app.app_context():
         # --- AUTO CLEANUP FOR REFACTOR ---
@@ -617,11 +625,10 @@ if __name__ == '__main__':
                     except Exception as e:
                         pass
 
-        # Now recreate the new schema
-        db.create_all()
         check_dependencies()
         try:
             logic.warmup_models()
         except Exception as e:
             print(f"[WARN] Model warmup failed (will load on first use): {e}")
+    
     socketio.run(app, host='0.0.0.0', port=5000, debug=True, use_reloader=False)

@@ -61,14 +61,23 @@ resource "aws_launch_template" "lt" {
               usermod -aG docker ubuntu
 
               cd /home/ubuntu
-              git clone https://github.com/rajpatel10124/guided-project-1.git
+              # Retry clone if network is flaky
+              for i in {1..5}; do git clone https://github.com/rajpatel10124/guided-project-1.git && break || sleep 5; done
               cd guided-project-1
               
               mkdir -p static/uploads
+              # Wait for EFS mount target to be ready
+              sleep 30
               mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${aws_efs_file_system.fs.dns_name}:/ /home/ubuntu/guided-project-1/static/uploads
               chown -R ubuntu:ubuntu /home/ubuntu/guided-project-1
 
               docker build -t scholaris-app .
+              # Wait for RDS to be reachable
+              until docker run --rm scholaris-app python3 -c "import socket; s = socket.socket(); s.connect(('${split(":", aws_db_instance.db.endpoint)[0]}', 5432))"; do
+                echo "Waiting for RDS..."
+                sleep 5
+              done
+
               docker run -d --name scholaris-container \
                 --restart always \
                 -p 80:5000 \
@@ -79,7 +88,7 @@ resource "aws_launch_template" "lt" {
                 -e MAIL_SERVER="smtp.gmail.com" \
                 -e MAIL_PORT=587 \
                 --log-driver=awslogs \
-                --log-opt awslogs-group=/aws/ec2/scholaris-app \
+                --log-opt awslogs-group=${aws_cloudwatch_log_group.scholaris_logs.name} \
                 --log-opt awslogs-region=us-east-1 \
                 scholaris-app
               EOF
@@ -99,3 +108,8 @@ resource "aws_autoscaling_group" "asg" {
 }
 
 output "ALB_URL" { value = "http://${aws_lb.alb.dns_name}" }
+
+resource "aws_cloudwatch_log_group" "scholaris_logs" {
+  name              = "/aws/ec2/scholaris-app"
+  retention_in_days = 7
+}
