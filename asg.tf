@@ -100,11 +100,7 @@ resource "aws_launch_template" "lt" {
                 -e MAIL_PASSWORD="dgmo vyaq ansy bmwu" \
                 -e MAIL_SERVER="smtp.gmail.com" \
                 -e MAIL_PORT=587 \
-                --log-driver=awslogs \
-                --log-opt awslogs-group=/aws/ec2/scholaris-app \
-                --log-opt awslogs-region=us-east-1 \
-                # FORCE REBOOT TIMESTAMP: 2026-04-24 13:28:00
-              scholaris-app
+                scholaris-app
               EOF
   )
 }
