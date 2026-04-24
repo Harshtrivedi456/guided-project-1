@@ -596,66 +596,43 @@ def run_bulk_check_task(app, run_id, temp_dir, threshold):
 # =============================================================================
 # ENTRY POINT
 # =============================================================================
-# Ensure database tables exist (Runs on startup under Gunicorn/Eventlet)
-with app.app_context():
-    max_retries = 10
-    retry_delay = 5
-    for i in range(max_retries):
-        try:
-            # If using Postgres, attempt to grant schema permissions first
-            if "postgresql" in app.config['SQLALCHEMY_DATABASE_URI']:
-                try:
+# Background Initialization: Ensures we pass health checks immediately while loading models/DB
+def init_db_and_models(app_obj):
+    with app_obj.app_context():
+        max_retries = 20
+        retry_delay = 5
+        for i in range(max_retries):
+            try:
+                if "postgresql" in app_obj.config['SQLALCHEMY_DATABASE_URI']:
+                    try:
+                        from sqlalchemy import text
+                        db.session.execute(text("GRANT ALL ON SCHEMA public TO scholaris_admin"))
+                        db.session.commit()
+                    except Exception:
+                        pass
+                db.create_all()
+                # Raw SQL Fallback
+                if "postgresql" in app_obj.config['SQLALCHEMY_DATABASE_URI']:
                     from sqlalchemy import text
-                    db.session.execute(text("GRANT ALL ON SCHEMA public TO scholaris_admin"))
+                    db.session.execute(text("""
+                        CREATE TABLE IF NOT EXISTS bulk_check_run (id SERIAL PRIMARY KEY, title VARCHAR(255), total_files INTEGER, processed_count INTEGER, status VARCHAR(50), threshold INTEGER, accepted INTEGER, rejected INTEGER, manual_review INTEGER, elapsed_sec FLOAT, created_at TIMESTAMP WITHOUT TIME ZONE);
+                        CREATE TABLE IF NOT EXISTS bulk_check_result (id SERIAL PRIMARY KEY, run_id INTEGER REFERENCES bulk_check_run(id) ON DELETE CASCADE, filename VARCHAR(255), verdict VARCHAR(50), reason VARCHAR(255), peer_score FLOAT, external_score FLOAT, ocr_confidence FLOAT, is_digital BOOLEAN, analysis_text TEXT, peer_details TEXT, sentence_map TEXT, created_at TIMESTAMP WITHOUT TIME ZONE);
+                    """))
                     db.session.commit()
-                except Exception:
-                    pass
-
-            db.create_all()
-            
-            # RAW SQL FALLBACK: If create_all is silent but fails, force it
-            if "postgresql" in app.config['SQLALCHEMY_DATABASE_URI']:
-                from sqlalchemy import text
-                db.session.execute(text("""
-                    CREATE TABLE IF NOT EXISTS bulk_check_run (
-                        id SERIAL PRIMARY KEY,
-                        title VARCHAR(255),
-                        total_files INTEGER,
-                        processed_count INTEGER,
-                        status VARCHAR(50),
-                        threshold INTEGER,
-                        accepted INTEGER,
-                        rejected INTEGER,
-                        manual_review INTEGER,
-                        elapsed_sec FLOAT,
-                        created_at TIMESTAMP WITHOUT TIME ZONE
-                    );
-                    CREATE TABLE IF NOT EXISTS bulk_check_result (
-                        id SERIAL PRIMARY KEY,
-                        run_id INTEGER REFERENCES bulk_check_run(id) ON DELETE CASCADE,
-                        filename VARCHAR(255),
-                        verdict VARCHAR(50),
-                        reason VARCHAR(255),
-                        peer_score FLOAT,
-                        external_score FLOAT,
-                        ocr_confidence FLOAT,
-                        is_digital BOOLEAN,
-                        analysis_text TEXT,
-                        peer_details TEXT,
-                        sentence_map TEXT,
-                        created_at TIMESTAMP WITHOUT TIME ZONE
-                    );
-                """))
-                db.session.commit()
-
-            print("[SCHOLARIS] Database schema verified/created.")
-            break
-        except Exception as e:
-            if i < max_retries - 1:
-                print(f"[SCHOLARIS] DB connection retry {i+1}/{max_retries} due to: {e}")
+                print("[SCHOLARIS] Database schema verified/created.")
+                break
+            except Exception as e:
+                print(f"[SCHOLARIS] DB connection retry {i+1}/{max_retries}: {e}")
                 time.sleep(retry_delay)
-            else:
-                print(f"[SCHOLARIS] CRITICAL: DB connection failed after {max_retries} retries: {e}")
+        
+        # Also warmup models in this background thread
+        try:
+            logic.warmup_models()
+        except Exception as e:
+            print(f"[SCHOLARIS] Background warmup failed: {e}")
+
+# Start background initialization immediately
+threading.Thread(target=init_db_and_models, args=(app,), daemon=True).start()
 
 if __name__ == '__main__':
     with app.app_context():
