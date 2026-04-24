@@ -78,6 +78,9 @@ resource "aws_launch_template" "lt" {
                 sleep 5
               done
 
+              # Grant permissions to public schema (Necessary for RDS Postgres 15+)
+              docker run --rm scholaris-app python3 -c "import sqlalchemy; engine=sqlalchemy.create_engine('postgresql://scholaris_admin:ScholarisPass123@${aws_db_instance.db.endpoint}/scholaris'); conn=engine.connect(); conn.execute(sqlalchemy.text('GRANT ALL ON SCHEMA public TO scholaris_admin')); conn.commit(); conn.close()" || true
+
               docker run -d --name scholaris-container \
                 --restart always \
                 -p 80:5000 \
