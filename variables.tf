@@ -3,7 +3,7 @@ variable "region" {
 }
 
 variable "instance_type" {
-  default = "t3a.xlarge" # 16GB RAM, cost-effective
+  default = "m7i-flex.large" # Free Tier eligible (Current Generation)
 }
 
 variable "project_name" {
