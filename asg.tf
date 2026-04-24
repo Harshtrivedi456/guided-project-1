@@ -82,18 +82,8 @@ resource "aws_launch_template" "lt" {
               chown -R ubuntu:ubuntu /home/ubuntu/guided-project-1
 
               docker build -t scholaris-app .
-              # Wait for RDS to be reachable
-              RDS_HOST="${split(":", aws_db_instance.db.endpoint)[0]}"
-              until docker run --rm scholaris-app python3 -c "import socket; s = socket.socket(); s.connect(('$RDS_HOST', 5432))"; do
-                echo "Waiting for RDS..."
-                sleep 5
-              done
-
-              # Grant permissions
-              DB_URL="postgresql://scholaris_admin:ScholarisPass123@$RDS_HOST/scholaris"
-              docker run --rm scholaris-app python3 -c "import sqlalchemy; engine=sqlalchemy.create_engine('$DB_URL'); conn=engine.connect(); conn.execute(sqlalchemy.text('GRANT ALL ON SCHEMA public TO scholaris_admin')); conn.commit(); conn.close()" || true
-
-              # Clean up and Start
+              
+              # Clean up and Start (Using EFS-backed SQLite)
               sudo docker stop scholaris-container || true
               sudo docker rm scholaris-container || true
 
@@ -101,7 +91,7 @@ resource "aws_launch_template" "lt" {
                 --name scholaris-container \
                 --restart always \
                 -p 80:5000 \
-                -e DATABASE_URL="$DB_URL" \
+                -e DATABASE_URL="sqlite" \
                 -e SECRET_KEY="something-very-secret-123" \
                 -e MAIL_USERNAME="lykensolution@gmail.com" \
                 -e MAIL_PASSWORD="dgmo vyaq ansy bmwu" \

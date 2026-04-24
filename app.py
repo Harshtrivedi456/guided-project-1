@@ -38,10 +38,19 @@ import logic
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-key-change-in-production')
 # Database path: Move to home directory to avoid NTFS permission issues on external drives
-local_db_path = os.path.join(os.path.expanduser("~"), ".scholaris_data", "scholaris.db")
-os.makedirs(os.path.dirname(local_db_path), exist_ok=True)
+if os.getenv('DATABASE_URL'):
+    # In Cloud, use a persistent SQLite file on the EFS mount to avoid RDS complexity
+    # We store it in static/uploads which is mounted to EFS
+    db_path = os.path.join(app.root_path, 'static', 'uploads', 'scholaris.db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+else:
+    # Local development
+    home_dir = os.path.expanduser("~")
+    scholaris_dir = os.path.join(home_dir, ".scholaris_data")
+    if not os.path.exists(scholaris_dir):
+        os.makedirs(scholaris_dir)
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(scholaris_dir, "scholaris.db")}'
 
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', f'sqlite:///{local_db_path}')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'static', 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1 GB
