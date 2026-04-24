@@ -83,19 +83,35 @@ resource "aws_launch_template" "lt" {
 
               docker build -t scholaris-app .
               # Wait for RDS to be reachable
-              until docker run --rm scholaris-app python3 -c "import socket; s = socket.socket(); s.connect(('${split(":", aws_db_instance.db.endpoint)[0]}', 5432))"; do
+              RDS_HOST="${split(":", aws_db_instance.db.endpoint)[0]}"
+              until docker run --rm scholaris-app python3 -c "import socket; s = socket.socket(); s.connect(('$RDS_HOST', 5432))"; do
                 echo "Waiting for RDS..."
                 sleep 5
               done
 
-              # Grant permissions to public schema (Necessary for RDS Postgres 15+)
-              docker run --rm scholaris-app python3 -c "import sqlalchemy; engine=sqlalchemy.create_engine('postgresql://scholaris_admin:ScholarisPass123@${aws_db_instance.db.endpoint}/scholaris'); conn=engine.connect(); conn.execute(sqlalchemy.text('GRANT ALL ON SCHEMA public TO scholaris_admin')); conn.commit(); conn.close()" || true
+              # Grant permissions
+              DB_URL="postgresql://scholaris_admin:ScholarisPass123@$RDS_HOST/scholaris"
+              docker run --rm scholaris-app python3 -c "import sqlalchemy; engine=sqlalchemy.create_engine('$DB_URL'); conn=engine.connect(); conn.execute(sqlalchemy.text('GRANT ALL ON SCHEMA public TO scholaris_admin')); conn.commit(); conn.close()" || true
 
-              # Clean up any existing containers (avoid name conflicts)
+              # Clean up and Start
               sudo docker stop scholaris-container || true
               sudo docker rm scholaris-container || true
 
-              sudo docker run -d --name scholaris-container --restart always -p 80:5000 -e DATABASE_URL="postgresql://scholaris_admin:ScholarisPass123@${aws_db_instance.db.endpoint}/scholaris" -e SECRET_KEY="something-very-secret-123" -e MAIL_USERNAME="lykensolution@gmail.com" -e MAIL_PASSWORD="dgmo vyaq ansy bmwu" -e MAIL_SERVER="smtp.gmail.com" -e MAIL_PORT=587 --log-driver=awslogs --log-opt awslogs-group=/aws/ec2/scholaris-app --log-opt awslogs-region=us-east-1 --log-opt awslogs-create-group=true scholaris-app
+              sudo docker run -d \
+                --name scholaris-container \
+                --restart always \
+                -p 80:5000 \
+                -e DATABASE_URL="$DB_URL" \
+                -e SECRET_KEY="something-very-secret-123" \
+                -e MAIL_USERNAME="lykensolution@gmail.com" \
+                -e MAIL_PASSWORD="dgmo vyaq ansy bmwu" \
+                -e MAIL_SERVER="smtp.gmail.com" \
+                -e MAIL_PORT=587 \
+                --log-driver=awslogs \
+                --log-opt awslogs-group=/aws/ec2/scholaris-app \
+                --log-opt awslogs-region=us-east-1 \
+                --log-opt awslogs-create-group=true \
+                scholaris-app
               EOF
   )
 }
