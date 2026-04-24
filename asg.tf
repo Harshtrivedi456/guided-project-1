@@ -39,7 +39,7 @@ resource "aws_lb_listener" "http" {
 resource "aws_launch_template" "lt" {
   name_prefix   = "scholaris-tpl-"
   image_id      = data.aws_ami.ubuntu.id
-  instance_type = "m7i-flex.large"
+  instance_type = var.instance_type
   key_name      = "terra"
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
   iam_instance_profile { name = aws_iam_instance_profile.scholaris_profile.name }
@@ -59,13 +59,18 @@ resource "aws_launch_template" "lt" {
               systemctl start docker
               systemctl enable docker
               usermod -aG docker ubuntu
-              mkdir -p /home/ubuntu/scholaris-devops/static/uploads
-              mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${aws_efs_file_system.fs.dns_name}:/ /home/ubuntu/scholaris-devops/static/uploads
+
               cd /home/ubuntu
-              git clone  https://github.com/rajpatel10124/guided-project-1.git
+              git clone https://github.com/rajpatel10124/guided-project-1.git
               cd guided-project-1
+              
+              mkdir -p static/uploads
+              mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${aws_efs_file_system.fs.dns_name}:/ /home/ubuntu/guided-project-1/static/uploads
+              chown -R ubuntu:ubuntu /home/ubuntu/guided-project-1
+
               docker build -t scholaris-app .
               docker run -d --name scholaris-container \
+                --restart always \
                 -p 80:5000 \
                 -e DATABASE_URL="postgresql://scholaris_admin:ScholarisPass123@${aws_db_instance.db.endpoint}/scholaris" \
                 -e SECRET_KEY="something-very-secret-123" \

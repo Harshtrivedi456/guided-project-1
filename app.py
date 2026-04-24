@@ -112,6 +112,12 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/health')
+def health():
+    """Health check for Load Balancer."""
+    return jsonify(status="ok"), 200
+
+
 # =============================================================================
 # HISTORY — list all past scan runs
 # =============================================================================
